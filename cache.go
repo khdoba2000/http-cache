@@ -67,6 +67,7 @@ type Client struct {
 	refreshKey         string
 	methods            []string
 	writeExpiresHeader bool
+	headers            []string ///headers to Consider when generating key
 }
 
 // ClientOption is used to set Client settings.
@@ -90,17 +91,13 @@ func (c *Client) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if c.cacheableMethod(r.Method) {
 			sortURLParams(r.URL)
-			key := generateKey(r.URL.String())
-			if r.Method == http.MethodPost && r.Body != nil {
-				body, err := ioutil.ReadAll(r.Body)
-				defer r.Body.Close()
-				if err != nil {
-					next.ServeHTTP(w, r)
-					return
-				}
-				reader := ioutil.NopCloser(bytes.NewBuffer(body))
-				key = generateKeyWithBody(r.URL.String(), body)
-				r.Body = reader
+			//initially only URL path
+			//add if headers specified to be considered in generating key
+			//add reqBody if reqMethod is POST
+			key, err := c.generateKey(r)
+			if err != nil {
+				next.ServeHTTP(w, r)
+				return
 			}
 
 			params := r.URL.Query()
@@ -108,7 +105,11 @@ func (c *Client) Middleware(next http.Handler) http.Handler {
 				delete(params, c.refreshKey)
 
 				r.URL.RawQuery = params.Encode()
-				key = generateKey(r.URL.String())
+				key, err := c.generateKey(r)
+				if err != nil {
+					next.ServeHTTP(w, r)
+					return
+				}
 
 				c.adapter.Release(key)
 			} else {
@@ -167,6 +168,31 @@ func (c *Client) Middleware(next http.Handler) http.Handler {
 	})
 }
 
+func (c *Client) generateKey(r *http.Request) (uint64, error) {
+	var (
+		key      uint64
+		keyBytes []byte
+	)
+	keyBytes = []byte(r.URL.String())
+	// Add the headers to be considered in generating the key
+	for _, header := range c.headers {
+		keyBytes = append(keyBytes, []byte(strings.Join(r.Header.Values(header), ""))...)
+	}
+
+	key = generateKey(keyBytes)
+	if r.Method == http.MethodPost && r.Body != nil {
+		body, err := ioutil.ReadAll(r.Body)
+		defer r.Body.Close()
+		if err != nil {
+			return 0, err
+		}
+		reader := ioutil.NopCloser(bytes.NewBuffer(body))
+		key = generateKey(append(keyBytes, body...))
+		r.Body = reader
+	}
+	return key, nil
+}
+
 func (c *Client) cacheableMethod(method string) bool {
 	for _, m := range c.methods {
 		if method == m {
@@ -209,17 +235,9 @@ func KeyAsString(key uint64) string {
 	return strconv.FormatUint(key, 36)
 }
 
-func generateKey(URL string) uint64 {
+func generateKey(keyBytes []byte) uint64 {
 	hash := fnv.New64a()
-	hash.Write([]byte(URL))
-
-	return hash.Sum64()
-}
-
-func generateKeyWithBody(URL string, body []byte) uint64 {
-	hash := fnv.New64a()
-	body = append([]byte(URL), body...)
-	hash.Write(body)
+	hash.Write(keyBytes)
 
 	return hash.Sum64()
 }
@@ -298,6 +316,15 @@ func ClientWithMethods(methods []string) ClientOption {
 func ClientWithExpiresHeader() ClientOption {
 	return func(c *Client) error {
 		c.writeExpiresHeader = true
+		return nil
+	}
+}
+
+// ClientWithAccessTokenHeader enables middleware to take the given request headers into considiration when generating the key
+// Optional setting. If not set only URL path is considered.
+func ClientWithAccessTokenHeader(headers []string) ClientOption {
+	return func(c *Client) error {
+		c.headers = headers
 		return nil
 	}
 }

@@ -313,7 +313,7 @@ func TestGenerateKeyString(t *testing.T) {
 
 	keys := make(map[string]string, len(urls))
 	for _, u := range urls {
-		rawKey := generateKey(u)
+		rawKey := generateKey([]byte(u))
 		key := KeyAsString(rawKey)
 
 		if otherURL, found := keys[key]; found {
@@ -347,7 +347,7 @@ func TestGenerateKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := generateKey(tt.URL); got != tt.want {
+			if got := generateKey([]byte(tt.URL)); got != tt.want {
 				t.Errorf("generateKey() = %v, want %v", got, tt.want)
 			}
 		})
@@ -382,7 +382,7 @@ func TestGenerateKeyWithBody(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := generateKeyWithBody(tt.URL, tt.body); got != tt.want {
+			if got := generateKey(append([]byte(tt.URL), tt.body...)); got != tt.want {
 				t.Errorf("generateKeyWithBody() = %v, want %v", got, tt.want)
 			}
 		})
