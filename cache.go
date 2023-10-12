@@ -30,7 +30,8 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"io/ioutil"
+	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -67,7 +68,8 @@ type Client struct {
 	refreshKey         string
 	methods            []string
 	writeExpiresHeader bool
-	headers            []string //headers to Consider when generating key
+	nonCachingPaths    map[string]struct{} //paths not cached deafault is NONE, for paths with path veriables use syntax like api/myroute/:path_var for api/myroute/123
+	cachingPaths       map[string]struct{} //paths to be cached, deafault is ALL, for paths with path veriables use syntax like api/myroute/:path_var for api/myroute/123
 }
 
 // ClientOption is used to set Client settings.
@@ -89,7 +91,7 @@ type Adapter interface {
 // Middleware is the HTTP cache middleware handler.
 func (c *Client) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if c.cacheableMethod(r.Method) {
+		if c.cacheable(r) {
 			sortURLParams(r.URL)
 			//initially only URL path
 			//add if headers specified to be considered in generating key
@@ -174,23 +176,74 @@ func (c *Client) generateKey(r *http.Request) (uint64, error) {
 		keyBytes []byte
 	)
 	keyBytes = []byte(r.URL.String())
-	// Add the headers to be considered in generating the key
-	for _, header := range c.headers {
-		keyBytes = append(keyBytes, []byte(strings.Join(r.Header.Values(header), ""))...)
-	}
 
 	key = generateKey(keyBytes)
-	if r.Method == http.MethodPost && r.Body != nil {
-		body, err := ioutil.ReadAll(r.Body)
+	if r.Method == http.MethodPost && r.Body != nil { //if req is a POST add body to the keyBytes
+		body, err := io.ReadAll(r.Body)
 		defer r.Body.Close()
 		if err != nil {
 			return 0, err
 		}
-		reader := ioutil.NopCloser(bytes.NewBuffer(body))
+		reader := io.NopCloser(bytes.NewBuffer(body))
 		key = generateKey(append(keyBytes, body...))
 		r.Body = reader
 	}
 	return key, nil
+}
+
+func (c *Client) cacheable(r *http.Request) bool {
+	return c.cacheableMethod(r.Method) && c.cacheableRoute(r.URL.Path)
+}
+
+func (c *Client) cacheableRoute(route string) bool {
+	if len(c.nonCachingPaths) > 0 {
+		if _, routeInNonCaching := c.nonCachingPaths[route]; routeInNonCaching {
+			return false
+		}
+		//try ignoring path veriables
+		for nonCachingRoute := range c.nonCachingPaths {
+			if comparePathsIgnoringPathVariables(nonCachingRoute, route) {
+				return false
+			}
+		}
+	}
+
+	if len(c.cachingPaths) > 0 {
+		if _, routeInCaching := c.cachingPaths[route]; !routeInCaching {
+			// for paths with path veriables use syntax like api/myroute/:path_var
+			//try ignoring path veriables
+			for cachingRoute := range c.cachingPaths {
+				if comparePathsIgnoringPathVariables(cachingRoute, route) {
+					return true
+				}
+			}
+			return false
+		}
+	}
+
+	return true
+}
+
+// routeTemp is in style like api/:path_var1/myroute/:path_var2  api/123341234/myroute/123123123
+// do not ignores leading and trailing '/'
+func comparePathsIgnoringPathVariables(routeTemp, route string) bool {
+
+	routeTempStrings := strings.Split(routeTemp, "/")
+	routeStrings := strings.Split(route, "/")
+
+	if len(routeStrings) != len(routeTempStrings) {
+		return false
+	}
+
+	for i := 0; i < len(routeStrings); i++ {
+		if routeTempStrings[i] != routeStrings[i] &&
+			len(routeTempStrings[i]) > 0 &&
+			routeTempStrings[i][0] != ':' {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (c *Client) cacheableMethod(method string) bool {
@@ -320,11 +373,36 @@ func ClientWithExpiresHeader() ClientOption {
 	}
 }
 
-// ClientWithImportantHeaders enables middleware to take the given request headers into considiration when generating the key
-// Optional setting. If not set only URL path is considered.
-func ClientWithImportantHeaders(headers []string) ClientOption {
+// ClientWithNonCachingPaths enables middleware to take the given route as non-caching
+// for paths with path veriables use syntax like api/myroute/:path_var
+// Optional setting. If not set all paths, no any Route will be NonCaching
+func ClientWithNonCachingPaths(paths []string) ClientOption {
 	return func(c *Client) error {
-		c.headers = headers
+		c.nonCachingPaths = map[string]struct{}{}
+		for _, route := range paths {
+			if _, insideCaching := c.cachingPaths[route]; insideCaching {
+				log.Fatalf("route %s found in both Caching and non-Caching", route)
+			}
+			c.nonCachingPaths[route] = struct{}{}
+		}
+
+		return nil
+	}
+}
+
+// ClientWithCachingPaths enables middleware to take the given route
+// for paths with path veriables use syntax like api/myroute/:path_var
+// Optional setting. If not set all paths(that is not specified in NonCachingPaths) will be cached
+func ClientWithCachingPaths(paths []string) ClientOption {
+	return func(c *Client) error {
+		c.cachingPaths = map[string]struct{}{}
+		for _, route := range paths {
+			if _, insideNonCaching := c.nonCachingPaths[route]; insideNonCaching {
+				log.Fatalf("route %s found in both Caching and non-Caching", route)
+			}
+			c.cachingPaths[route] = struct{}{}
+		}
+
 		return nil
 	}
 }

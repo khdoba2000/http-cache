@@ -479,3 +479,99 @@ func TestNewClient(t *testing.T) {
 		})
 	}
 }
+
+func TestComparePathsIgnoringPathVariables(t *testing.T) {
+	tests := []struct {
+		name      string
+		routeTemp string
+		route     string
+		want      bool
+	}{
+		{
+			"comparePathsIgnoringPathVariables1",
+			"api/myroute",
+			"api/myroute",
+			true,
+		},
+		{
+			"comparePathsIgnoringPathVariables1",
+			"api/:var1/myroute/:var2",
+			"api/123341234/myroute/123123123",
+			true,
+		},
+		{
+			"comparePathsIgnoringPathVariables2",
+			"/api/:var1/myroute/:var2",
+			"/api/123341234-asdfasd-dsaf/myroute/123123123",
+			true,
+		},
+		{
+			"comparePathsIgnoringPathVariables4",
+			"api/:var/myroute2/",
+			"api/123341234/myroute2/",
+			true,
+		},
+		{
+			"comparePathsIgnoringPathVariables3",
+			"api/:var/myroute/:var2",
+			"api/123341234/myroute2/123123123/",
+			false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := comparePathsIgnoringPathVariables(tt.routeTemp, tt.route); got != tt.want {
+				t.Errorf("comparePathsIgnoringPathVariables() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCacheableRoute(t *testing.T) {
+
+	client := &Client{
+		cachingPaths: map[string]struct{}{
+			"api/:var/myroute1/:path_var2": struct{}{},
+			"api/:var/myroute2/":           struct{}{},
+		},
+		nonCachingPaths: map[string]struct{}{
+			"api/:var/nonCaching/": struct{}{},
+		},
+	}
+
+	tests := []struct {
+		name  string
+		route string
+		want  bool
+	}{
+		{
+			"CacheableRoute",
+			"api/123341234/myroute1/123123123",
+			true,
+		},
+		{
+			"Non CacheableRoute",
+			"api2/123341234-asdfasd-dsaf/myroute1/123123123",
+			false,
+		},
+		{
+			"CacheableRoute with /",
+			"api/123341234/myroute2/",
+			true,
+		},
+		{
+			"Inside nonCachingPaths map",
+			"api/path_var1/nonCaching/",
+			false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := client.cacheableRoute(tt.route); got != tt.want {
+				t.Errorf("cacheableRoute() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+
+}
