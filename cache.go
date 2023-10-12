@@ -67,7 +67,7 @@ type Client struct {
 	refreshKey         string
 	methods            []string
 	writeExpiresHeader bool
-	headers            []string ///headers to Consider when generating key
+	headers            []string //headers to Consider when generating key
 }
 
 // ClientOption is used to set Client settings.
@@ -320,9 +320,9 @@ func ClientWithExpiresHeader() ClientOption {
 	}
 }
 
-// ClientWithAccessTokenHeader enables middleware to take the given request headers into considiration when generating the key
+// ClientWithImportantHeaders enables middleware to take the given request headers into considiration when generating the key
 // Optional setting. If not set only URL path is considered.
-func ClientWithAccessTokenHeader(headers []string) ClientOption {
+func ClientWithImportantHeaders(headers []string) ClientOption {
 	return func(c *Client) error {
 		c.headers = headers
 		return nil
