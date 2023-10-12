@@ -31,7 +31,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -381,7 +380,7 @@ func ClientWithNonCachingPaths(paths []string) ClientOption {
 		c.nonCachingPaths = map[string]struct{}{}
 		for _, route := range paths {
 			if _, insideCaching := c.cachingPaths[route]; insideCaching {
-				log.Fatalf("route %s found in both Caching and non-Caching", route)
+				return fmt.Errorf("route %s found in both caching and non-caching", route)
 			}
 			c.nonCachingPaths[route] = struct{}{}
 		}
@@ -398,7 +397,7 @@ func ClientWithCachingPaths(paths []string) ClientOption {
 		c.cachingPaths = map[string]struct{}{}
 		for _, route := range paths {
 			if _, insideNonCaching := c.nonCachingPaths[route]; insideNonCaching {
-				log.Fatalf("route %s found in both Caching and non-Caching", route)
+				return fmt.Errorf("route %s found in both caching and non-caching", route)
 			}
 			c.cachingPaths[route] = struct{}{}
 		}
