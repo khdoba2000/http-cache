@@ -377,7 +377,7 @@ func ClientWithExpiresHeader() ClientOption {
 // Optional setting. If not set all paths, no any Route will be NonCaching
 func ClientWithNonCachingPaths(paths []string) ClientOption {
 	return func(c *Client) error {
-		c.nonCachingPaths = map[string]struct{}{}
+		c.nonCachingPaths = make(map[string]struct{}, len(paths))
 		for _, route := range paths {
 			if _, insideCaching := c.cachingPaths[route]; insideCaching {
 				return fmt.Errorf("route %s found in both caching and non-caching", route)
@@ -394,7 +394,7 @@ func ClientWithNonCachingPaths(paths []string) ClientOption {
 // Optional setting. If not set all paths(that is not specified in NonCachingPaths) will be cached
 func ClientWithCachingPaths(paths []string) ClientOption {
 	return func(c *Client) error {
-		c.cachingPaths = map[string]struct{}{}
+		c.cachingPaths = make(map[string]struct{}, len(paths))
 		for _, route := range paths {
 			if _, insideNonCaching := c.nonCachingPaths[route]; insideNonCaching {
 				return fmt.Errorf("route %s found in both caching and non-caching", route)
