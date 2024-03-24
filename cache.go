@@ -129,6 +129,7 @@ func (c *Client) Middleware(next http.Handler) http.Handler {
 						if c.writeExpiresHeader {
 							w.Header().Set("Expires", response.Expiration.UTC().Format(http.TimeFormat))
 						}
+						w.Header().Set("X-Cache-Status", "HIT")
 						w.Write(response.Value)
 						return
 					}
@@ -191,7 +192,14 @@ func (c *Client) generateKey(r *http.Request) (uint64, error) {
 }
 
 func (c *Client) cacheable(r *http.Request) bool {
-	return c.cacheableMethod(r.Method) && c.cacheableRoute(r.URL.Path)
+	return c.cacheableHeader(r.Header) &&
+		c.cacheableMethod(r.Method) &&
+		c.cacheableRoute(r.URL.Path)
+}
+
+func (c *Client) cacheableHeader(header http.Header) bool {
+	cacheControlHeader := header.Get("Cache-Control")
+	return !strings.Contains(cacheControlHeader, "no-cache")
 }
 
 func (c *Client) cacheableRoute(route string) bool {

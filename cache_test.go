@@ -531,37 +531,48 @@ func TestCacheableRoute(t *testing.T) {
 
 	client := &Client{
 		cachingPaths: map[string]struct{}{
-			"api/:var/myroute1/:path_var2": struct{}{},
-			"api/:var/myroute2/":           struct{}{},
+			"api/:var/myroute1/:path_var2": {},
+			"api/:var/myroute2/":           {},
 		},
 		nonCachingPaths: map[string]struct{}{
-			"api/:var/nonCaching/": struct{}{},
+			"api/:var/nonCaching/": {},
 		},
 	}
 
 	tests := []struct {
-		name  string
-		route string
-		want  bool
+		name   string
+		route  string
+		header http.Header
+		want   bool
 	}{
 		{
 			"CacheableRoute",
 			"api/123341234/myroute1/123123123",
+			http.Header{},
 			true,
 		},
 		{
 			"Non CacheableRoute",
 			"api2/123341234-asdfasd-dsaf/myroute1/123123123",
+			http.Header{},
 			false,
 		},
 		{
 			"CacheableRoute with /",
 			"api/123341234/myroute2/",
+			http.Header{},
 			true,
 		},
 		{
 			"Inside nonCachingPaths map",
 			"api/path_var1/nonCaching/",
+			http.Header{},
+			false,
+		},
+		{
+			"cache control",
+			"api/123341234/myroute2/",
+			http.Header{"Cache-Control": []string{"no-cache"}},
 			false,
 		},
 	}
@@ -570,6 +581,38 @@ func TestCacheableRoute(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := client.cacheableRoute(tt.route); got != tt.want {
 				t.Errorf("cacheableRoute() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+
+}
+
+func TestCacheableHeader(t *testing.T) {
+
+	client := &Client{}
+
+	tests := []struct {
+		name   string
+		header http.Header
+		want   bool
+	}{
+
+		{
+			"no cache control header",
+			http.Header{},
+			true,
+		},
+		{
+			"cache control",
+			http.Header{"Cache-Control": []string{"no-cache"}},
+			false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := client.cacheableHeader(tt.header); got != tt.want {
+				t.Errorf("cacheableHeader() = %v, want %v", got, tt.want)
 			}
 		})
 	}
